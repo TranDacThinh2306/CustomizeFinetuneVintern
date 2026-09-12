@@ -3,6 +3,7 @@ Modeling modules for Vision-Language models.
 """
 
 from .bridge_modules import (
+    BaseInternBridge,
     LinearBridgeBaseline,
     LinearBridge,
     ResidualBridge,
@@ -18,6 +19,7 @@ from .bridge_modules import (
 )
 
 __all__ = [
+    'BaseInternBridge',
     'LinearBridgeBaseline',
     'LinearBridge',
     'ResidualBridge',

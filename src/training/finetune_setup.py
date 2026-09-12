@@ -15,6 +15,7 @@ import torch.nn as nn
 from typing import Optional, Literal
 
 from src.modeling.bridge_modules import (
+    BaseInternBridge,
     LinearBridge,
     LinearBridgeBaseline,
     ResidualBridge,
@@ -28,6 +29,7 @@ from src.middleware.logger import data_loader_logger as logger
 
 
 BRIDGE_TYPE = Literal[
+    'base_internvl_bridge',   # Baseline: InternLM-Vision's original bridge
     'linear_bridge',        # Baseline: simple linear
     'residual',             # Exp 1: Residual improvement
     'multi_token',          # Exp 2: Multiple tokens from baseline
@@ -43,7 +45,6 @@ PATCH_BASED_BRIDGES = {'tile_attention', 'mini_qformer', 'qformer'}
 
 # Bridge types that need text embeddings (for semantic filtering)
 TEXT_CONDITIONING_BRIDGES = {'qformer'}
-
 
 class VisionLanguageBridge(nn.Module):
     """
@@ -95,6 +96,9 @@ class VisionLanguageBridge(nn.Module):
         
         # Freeze both base models
         self._freeze_models()
+
+        # *UnFreeze language model for finetune lora only
+        self.unfreeze_language_model()
     
     def _create_bridge(self) -> nn.Module:
         """Create bridge module based on type."""
@@ -105,6 +109,7 @@ class VisionLanguageBridge(nn.Module):
         # LLM expects 896-dimensional embeddings (Qwen2)
         hidden_dim = 896
         
+
         if self.bridge_type == 'linear_bridge':
             return LinearBridge(in_features=vision_dim, out_features=hidden_dim)
         
@@ -147,6 +152,9 @@ class VisionLanguageBridge(nn.Module):
                 num_layers=config.get('num_layers', 4)
             )
         
+        # elif self.bridge_type == 'base_internvl_bridge':
+        #     return BaseInternBridge(in_features=vision_dim, out_features=hidden_dim)
+
         else:
             raise ValueError(f"Unknown bridge_type: {self.bridge_type}")
     
@@ -157,6 +165,16 @@ class VisionLanguageBridge(nn.Module):
         
         for param in self.language_model.parameters():
             param.requires_grad = False
+
+    def unfreeze_vision_model(self):
+        """Freeze vision model."""
+        for param in self.vision_model.parameters():
+            param.requires_grad = True
+
+    def unfreeze_language_model(self):
+        """Unfreeze vision model."""
+        for param in self.language_model.parameters():
+            param.requires_grad = True
     
     def warm_start_from_baseline(self):
         """Initialize bridge from baseline weights instead of random.

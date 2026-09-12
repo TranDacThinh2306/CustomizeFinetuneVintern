@@ -10,6 +10,33 @@ import torch
 import torch.nn as nn
 import math
 
+class BaseInternBridge(nn.Module):
+    """
+    BaseIntern's bridge from vision to language
+    
+    Architecture:
+    - Norm -> FC -> GELU -> FC
+
+    """
+    
+    def __init__(self, in_features: int = 1024, out_features: int = 896, **kwargs):
+        super().__init__()
+        hidden_dim = 2048
+        
+        # Baseline Flow
+        self.norm = nn.LayerNorm(in_features)
+        self.fc1 = nn.Linear(in_features, hidden_dim)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(hidden_dim, out_features)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        baseline = self.norm(x)
+        baseline = self.fc1(baseline)
+        baseline = self.act(baseline)
+        baseline_out = self.fc2(baseline)
+        
+        return baseline_out
 
 class LinearBridgeBaseline(nn.Module):
     """
@@ -57,7 +84,7 @@ class ResidualBridge(nn.Module):
         hidden_dim = 2048
         
         # Baseline (frozen would be better, but we'll train it)
-        self.baseline = nn.Linear(in_features, out_features)
+        # self.baseline = nn.Linear(in_features, out_features)
         
         # Improvement path
         self.norm = nn.LayerNorm(in_features)
@@ -67,7 +94,7 @@ class ResidualBridge(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Baseline
-        baseline_out = self.baseline(x)
+        # baseline_out = self.baseline(x)
         
         # Improvement
         improvement = self.norm(x)
@@ -76,8 +103,8 @@ class ResidualBridge(nn.Module):
         improvement = self.fc2(improvement)
         
         # Residual
-        return baseline_out + improvement
-
+        # return baseline_out + improvement
+        return improvement
 
 class LinearBridge(nn.Module):
     """Legacy alias for ResidualBridge (maintains compatibility)."""

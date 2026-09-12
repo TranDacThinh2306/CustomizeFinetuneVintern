@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from transformers import AutoTokenizer
 import torchvision.transforms as T
 from PIL import Image
-from torchvision.transforms.functional import InterpolationMode
+from torchvision.transforms.functional import 
+from peft import LoraConfig, get_peft_model, TaskType
+
 
 from src.middleware.logger import data_loader_logger as logger
 from src.schema.data_schema import OneSample
@@ -146,6 +148,14 @@ class TrainConfig:
     fp16: bool = False
     num_workers: int = 4
     
+    #LoRA
+    use_lora: bool = True
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    lora_target_modules: List[str] = None  # set default trong __post_init__ hoặc field(default_factory=...)
+    train_bridge_alongside_lora: bool = True  # có tiếp tục train bridge cùng lúc không
+
     # Early stopping
     early_stopping: bool = True
     patience: int = 5
@@ -192,6 +202,22 @@ class BridgeTrainer:
         if hasattr(self.model, 'bridge'):
             self.model.bridge = self.model.bridge.to(dtype=model_dtype)
         
+        if self.config.use_lora:
+            lora_cfg = LoraConfig(
+                r=self.config.lora_r,
+                lora_alpha=self.config.lora_alpha,
+                lora_dropout=self.config.lora_dropout,
+                target_modules=self.config.lora_target_modules,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,
+            )
+            self.model.language_model = get_peft_model(self.model.language_model, lora_cfg)
+            self.model.language_model.print_trainable_parameters()
+
+            for p in self.model.language_model.parameters():
+                if p.requires_grad:
+                    p.data = p.data.float()
+
         # Disable gradient checkpointing on frozen models to eliminate warnings
         if hasattr(self.model.vision_model, 'gradient_checkpointing_disable'):
             self.model.vision_model.gradient_checkpointing_disable()
@@ -316,6 +342,11 @@ class BridgeTrainer:
         for param in self.model.language_model.parameters():
             param.requires_grad = False
         
+        # Freeze bridge if not training alongside LoRA
+        if not self.config.train_bridge_alongside_lora:
+            for param in self.model.bridge.parameters():
+                param.requires_grad = False
+
         # Get trainable parameters
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -615,7 +646,10 @@ class BridgeTrainer:
             )
         
         # Get text embeddings early (needed for QFormer and concatenation)
-        text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
+        if self.config.use_lora:
+            text_embeddings = self.model.language_model.get_input_embeddings()(input_ids)
+        else:
+            text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
         # Convert to model dtype immediately (embeddings are float32 by default)
         text_embeddings = text_embeddings.to(dtype=model_dtype, device=self.device)
         
@@ -764,7 +798,7 @@ class BridgeTrainer:
             if accumulation_counter % self.config.gradient_accumulation_steps == 0:
                 # Gradient clipping
                 nn.utils.clip_grad_norm_(
-                    [p for p in self.model.bridge.parameters() if p.requires_grad],
+                    [p for p in self.model.parameters() if p.requires_grad],
                     max_norm=self.config.max_grad_norm
                 )
                 
@@ -976,7 +1010,7 @@ class BridgeTrainer:
         # Handle remaining accumulated gradients
         if accumulation_counter % self.config.gradient_accumulation_steps != 0:
             nn.utils.clip_grad_norm_(
-                [p for p in self.model.bridge.parameters() if p.requires_grad],
+                [p for p in self.model.parameters() if p.requires_grad],
                 max_norm=self.config.max_grad_norm
             )
             self.optimizer.step()
@@ -1059,6 +1093,11 @@ class BridgeTrainer:
             'early_stop_counter': self.early_stop_counter,
         }
         
+        if self.config.use_lora:
+                adapter_dir = os.path.join(self.config.output_dir, 'best_lora' if is_best else f'lora_step_{self.global_step}')
+                self.model.language_model.save_pretrained(adapter_dir)
+        # torch.save(checkpoint, path)  # checkpoint vẫn chứa bridge_state như cũ
+            
         if is_best:
             path = os.path.join(self.config.output_dir, 'best_model.pt')
             self.best_model_path = path
@@ -1174,7 +1213,12 @@ class BridgeTrainer:
                 raise ValueError(f"Cannot extract vision embeddings for {bridge_type}")
 
         vision_embeddings = vision_embeddings.detach()
-        text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
+
+        if self.config.use_lora:
+            text_embeddings = self.model.language_model.get_input_embeddings()(input_ids)
+        else:
+            text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
+
         text_embeddings = text_embeddings.to(dtype=model_dtype, device=self.device)
 
         if bridge_type == 'qformer':
