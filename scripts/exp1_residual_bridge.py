@@ -38,6 +38,17 @@ class Exp1Config(ExperimentConfig):
     eval_steps = 1000
     save_steps = 1000
     
+    use_lora = True
+    train_bridge_alongside_lora
+    lora_target_modules = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
     output_dir = "checkpoints/exp1_residual_bridge"
 
 
