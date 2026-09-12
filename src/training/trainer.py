@@ -156,6 +156,7 @@ class TrainConfig:
     lora_dropout: float = 0.05
     lora_target_modules: List[str] = None  # set default trong __post_init__ hoặc field(default_factory=...)
     train_bridge_alongside_lora: bool = True  # có tiếp tục train bridge cùng lúc không
+    freeze_bridge_after_epochs: int = None  # freeze bridge sau số epoch
 
     # Early stopping
     early_stopping: bool = True
@@ -335,6 +336,7 @@ class BridgeTrainer:
         else:
             return torch.device(self.config.device)
     
+
     def _setup_optimization(self):
         """Setup optimizer and scheduler."""
         # Freeze base models
@@ -387,6 +389,15 @@ class BridgeTrainer:
         logger.info(f"Warmup steps: {warmup_steps}/{total_steps}")
         logger.info(f"Total training steps: {total_steps}")
     
+    def _freeze_bridge(self):
+        """Freeze bridge parameters (stop training bridge, e.g. to let LoRA continue alone)."""
+        frozen_count = 0
+        for param in self.model.bridge.parameters():
+            if param.requires_grad:
+                param.requires_grad = False
+                frozen_count += param.numel()
+        logger.info(f"✓ Bridge frozen: {frozen_count:,} parameters set to requires_grad=False")
+
     def _log_info(self):
         """Log training configuration."""
         logger.info("=" * 80)
@@ -1533,6 +1544,16 @@ class BridgeTrainer:
                 }
                 self._save_epoch_results(epoch, epoch_metrics)
                 
+                # === Freeze bridge after some epochs, mostly use for specific experiments to test the model's ability to learn without the bridge ===
+                if (
+                    self.config.freeze_bridge_after_epoch is not None
+                    and (epoch + 1) == self.config.freeze_bridge_after_epoch
+                ):
+                    self._freeze_bridge()
+                    trainable_count = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+                    total_count = sum(p.numel() for p in self.model.parameters())
+                    logger.info(f"After freezing bridge: trainable {trainable_count:,}/{total_count:,} ({100*trainable_count/total_count:.2f}%)")
+                    
                 # Show sample inference
                 self._sample_inference(epoch, num_samples=3)
                 
