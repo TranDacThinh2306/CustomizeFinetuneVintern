@@ -40,13 +40,10 @@ class Exp1Config(ExperimentConfig):
     
     use_lora = True
     train_bridge_alongside_lora = True
-    lora_target_modules = None  # Will be set in __post_init__ if None
+    lora_target_modules = ["q_proj", "k_proj", "v_proj", "o_proj","gate_proj", "up_proj", "down_proj"] 
     output_dir = "checkpoints/exp1_residual_bridge"
     
-    # def __post_init__(self):
-    #     """Set default LoRA target_modules if not provided."""
-    #     if self.use_lora and not self.lora_target_modules:
-    #         self.lora_target_modules = ["q_proj", "k_proj", "v_proj", "o_proj","gate_proj", "up_proj", "down_proj"]
+
 
 
 class Experiment1(BaseExperiment):
