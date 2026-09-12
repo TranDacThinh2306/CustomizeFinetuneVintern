@@ -10,6 +10,7 @@ Vision Model and Language Model are completely frozen.
 import os
 import math
 import json
+import shutil
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -305,6 +306,7 @@ class BridgeTrainer:
         
         # Checkpoint management: track recent checkpoints for cleanup
         self.recent_checkpoints = []  # Keep only 2 most recent
+        self.recent_lora_checkpoints = []  # Keep only N most recent
         
         # Resume if specified
         if config.resume_from and os.path.exists(config.resume_from):
@@ -1098,9 +1100,10 @@ class BridgeTrainer:
         }
         
         if self.config.use_lora:
-                adapter_dir = os.path.join(self.config.output_dir, 'best_lora' if is_best else f'lora_step_{self.global_step}')
-                self.model.language_model.save_pretrained(adapter_dir)
-        # torch.save(checkpoint, path)  # checkpoint vẫn chứa bridge_state như cũ
+            adapter_dir = os.path.join(self.config.output_dir, 'best_lora' if is_best else f'lora_step_{self.global_step}')
+            self.model.language_model.save_pretrained(adapter_dir)
+            if not is_best:
+                self._cleanup_old_lora_checkpoints(adapter_dir)
             
         if is_best:
             path = os.path.join(self.config.output_dir, 'best_model.pt')
@@ -1130,6 +1133,21 @@ class BridgeTrainer:
         except Exception as e:
             logger.warning(f"Failed to cleanup old checkpoints: {e}")
     
+    def _cleanup_old_lora_checkpoints(self, new_lora_dir: str, keep_last_n: int = 1):
+        """Keep only the N most recent LoRA adapter dirs (besides best_lora)."""
+        try:
+            # Add the new LoRA dir to the list
+            self.recent_lora_checkpoints.append(new_lora_dir)
+            
+            # Keep only the last N LoRA dirs
+            if len(self.recent_lora_checkpoints) > keep_last_n:
+                old_lora_dir = self.recent_lora_checkpoints.pop(0)
+                if os.path.exists(old_lora_dir):
+                    shutil.rmtree(old_lora_dir)
+                    logger.info(f"✓ Removed old LoRA checkpoint: {old_lora_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old LoRA checkpoints: {e}")
+
     def _load_checkpoint(self, checkpoint_path: str):
         """Load checkpoint."""
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
