@@ -924,7 +924,11 @@ class BridgeTrainer:
                                         attention_mask = inputs['attention_mask'].to(self.device)
                                         
                                         # Get text embeddings
-                                        text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
+                                        if self.config.use_lora:
+                                            text_embeddings = self.model.language_model.get_input_embeddings()(input_ids)
+                                        else:
+                                            text_embeddings = self.model.language_model.model.embed_tokens(input_ids)
+                                            
                                         # Convert to model dtype immediately
                                         text_embeddings = text_embeddings.to(dtype=model_dtype, device=self.device)
 
