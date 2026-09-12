@@ -156,7 +156,7 @@ class TrainConfig:
     lora_dropout: float = 0.05
     lora_target_modules: List[str] = None  # set default trong __post_init__ hoặc field(default_factory=...)
     train_bridge_alongside_lora: bool = True  # có tiếp tục train bridge cùng lúc không
-    freeze_bridge_after_epochs: int = None  # freeze bridge sau số epoch
+    freeze_bridge_after_epoch: int = None  # freeze bridge sau số epoch
 
     # Early stopping
     early_stopping: bool = True
@@ -166,6 +166,11 @@ class TrainConfig:
     # Checkpoint
     resume_from: Optional[str] = None
     save_best: bool = True
+
+    def __post_init__(self):
+        """Set default LoRA target_modules if not provided."""
+        if self.use_lora and not self.lora_target_modules:
+            self.lora_target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 
 class BridgeTrainer:
