@@ -39,7 +39,7 @@ class Exp1Config(ExperimentConfig):
     save_steps = 1000
     
     use_lora = True
-    train_bridge_alongside_lora
+    train_bridge_alongside_lora = True
     lora_target_modules = [
         "q_proj",
         "k_proj",

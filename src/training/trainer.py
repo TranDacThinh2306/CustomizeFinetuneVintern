@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from transformers import AutoTokenizer
 import torchvision.transforms as T
 from PIL import Image
-from torchvision.transforms.functional import 
+from torchvision.transforms.functional import InterpolationMode
 from peft import LoraConfig, get_peft_model, TaskType
 
 
